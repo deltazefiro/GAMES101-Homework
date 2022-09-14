@@ -23,6 +23,8 @@ struct fragment_shader_payload
     Eigen::Vector3f color;
     Eigen::Vector3f normal;
     Eigen::Vector2f tex_coords;
+
+    // Get color with: texture.getColor()
     Texture* texture;
 };
 

@@ -186,23 +186,38 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
                 (view * model * t->v[2])
         };
 
-        std::array<Eigen::Vector3f, 3> viewspace_pos;
+        std::array<Eigen::Vector3f, 3> viewspace_pos; // viewspace_pos: the vertex pos after view & model transformation, but have not projected yet
 
         std::transform(mm.begin(), mm.end(), viewspace_pos.begin(), [](auto& v) {
-            return v.template head<3>();
+            return v.template head<3>(); // 4 dim -> 3 dim
         });
+
+        /*
+         * C++ Lambda Functions
+         *  eg: [](auto a, auto b) { return a < b; }
+         *  ref: https://docs.microsoft.com/en-us/cpp/cpp/lambda-expressions-in-cpp?view=msvc-170
+         */
 
         Eigen::Vector4f v[] = {
                 mvp * t->v[0],
                 mvp * t->v[1],
                 mvp * t->v[2]
         };
-        //Homogeneous division
-        for (auto& vec : v) {
-            vec.x()/=vec.w();
-            vec.y()/=vec.w();
-            vec.z()/=vec.w();
+
+        // FIXME: Here is the issue. https://zhuanlan.zhihu.com/p/509902950
+
+        for (auto& vec: v) {
+            vec.x() /= vec.w();
+            vec.y() /= vec.w();
+            // Here throw away the z value
         }
+
+        // //Homogeneous division
+        // for (auto& vec : v) {
+        //     vec.x()/=vec.w();
+        //     vec.y()/=vec.w();
+        //     vec.z()/=vec.w();
+        // }
 
         Eigen::Matrix4f inv_trans = (view * model).inverse().transpose();
         Eigen::Vector4f n[] = {
@@ -253,21 +268,68 @@ static Eigen::Vector2f interpolate(float alpha, float beta, float gamma, const E
     u /= weight;
     v /= weight;
 
-    return Eigen::Vector2f(u, v);
+    return {u, v};
 }
 
-//Screen space rasterization
-void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eigen::Vector3f, 3>& view_pos) 
-{
-    // TODO: From your HW3, get the triangle rasterization code.
-    // TODO: Inside your rasterization loop:
-    //    * v[i].w() is the vertex view space depth value z.
-    //    * Z is interpolated view space depth for the current pixel
-    //    * zp is depth between zNear and zFar, used for z-buffer
 
-    // float Z = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
-    // float zp = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
-    // zp *= Z;
+//Screen space rasterization
+void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eigen::Vector3f, 3>& view_pos)
+{
+    auto v = t.toVector4();
+    int x_max = ceil(std::max({v[0].x(), v[1].x(), v[2].x()}));
+    int x_min = floor(std::min({v[0].x(), v[1].x(), v[2].x()}));
+    int y_max = ceil(std::max({v[0].y(), v[1].y(), v[2].y()}));
+    int y_min = floor(std::min({v[0].y(), v[1].y(), v[2].y()}));
+
+    for (int x = x_min; x <= x_max; x++)
+    {
+        for (int y = y_min; y <= y_max; y++)
+        {
+            if (insideTriangle(x, y, t.v))
+            {
+                // Calculate z interpolated_depth
+                auto[alpha, beta, gamma] = computeBarycentric2D((float) x, (float) y, t.v);
+
+                /*
+                // FIXME: I do not know what this code for, as the value v[i].w() is always 1.
+                          And (alpha + beta + gamma) is alwalys 1.
+                          2022.09.10: I know what happend to the code. The assignment framework has issues.
+                          See zhihu.
+
+                // Inside your rasterization loop:
+                //    * v[i].w() is the vertex view space depth value z.
+                //    * Z is interpolated view space depth for the current pixel
+                //    * zp is depth between zNear and zFar, used for z-buffer
+
+                float Z = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                float zp = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                zp *= Z;
+                 */
+
+                // View pos contains the coordinates before projection matrix
+                float zs[] = {view_pos[0].z(), view_pos[1].z(), view_pos[2].z()};
+
+                // First, we calculate the interpolated z with `Perspective-Correct Interpolation`
+                float interpolated_depth = 1. / (alpha / zs[0] + beta / zs[1] + gamma / zs[2]);
+
+                // Then, we interpolate rest of the parameters.
+                Vector3f interpolated_color = interpolated_depth * (alpha/zs[0] * t.color[0] + beta/zs[1] * t.color[1] + gamma/zs[2] * t.color[2]); // The color is diffuse color (coeffitio)
+                Vector3f interpolated_normal = interpolated_depth * (alpha/zs[0] * t.normal[0] + beta/zs[1] * t.normal[1] + gamma/zs[2] * t.normal[2]);
+                Vector2f interpolated_texcoords = interpolated_depth * (alpha/zs[0] * t.tex_coords[0] + beta/zs[1] * t.tex_coords[1] + gamma/zs[2] * t.tex_coords[2]);
+
+                if (interpolated_depth < depth_buf[get_index(x, y)])
+                {
+                    auto payload = fragment_shader_payload(interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr);
+                    auto color = fragment_shader(payload);
+
+                    // Set the current pixel (use the set_pixel function) to the color of the triangle (use getColor function) if it should be painted.
+                    set_pixel(Vector2i({x, y}), color);
+                    depth_buf[get_index(x, y)] = interpolated_depth;
+                }
+            }
+        }
+    }
+
 
     // TODO: Interpolate the attributes:
     // auto interpolated_color
@@ -280,7 +342,7 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eig
     // Use: Instead of passing the triangle's color directly to the frame buffer, pass the color to the shaders first to get the final color;
     // Use: auto pixel_color = fragment_shader(payload);
 
- 
+
 }
 
 void rst::rasterizer::set_model(const Eigen::Matrix4f& m)
