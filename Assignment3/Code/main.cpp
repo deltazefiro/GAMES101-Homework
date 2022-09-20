@@ -116,7 +116,7 @@ Eigen::Vector3f texture_fragment_shader(const fragment_shader_payload &payload) 
     Eigen::Vector3f return_color = {0, 0, 0};
     if (payload.texture) {
         // TODO: Get the texture value at the texture coordinates of the current fragment
-
+        return_color = payload.texture->getColor(payload.tex_coords.x(), payload.tex_coords.y());
     }
     Eigen::Vector3f texture_color;
     texture_color << return_color.x(), return_color.y(), return_color.z();
@@ -146,19 +146,34 @@ Eigen::Vector3f texture_fragment_shader(const fragment_shader_payload &payload) 
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
 
+        Vector3f light_vec = light.position - point;
+        Vector3f light_intensity = light.intensity / pow(light_vec.norm(), 2);
+        Vector3f view_vec = eye_pos - point;
+
+        Vector3f ambient = ka.array() * amb_light_intensity.array();
+        Vector3f diffustion = kd.array() *
+                              light_intensity.array() *
+                              std::max(light_vec.normalized().dot(normal), 0.f);
+        Vector3f specular = ks.array() *
+                            light_intensity.array() *
+                            pow(std::max(-(view_vec.normalized() + light_vec.normalized()).normalized().dot(normal),
+                                         0.f), p);
+
+        result_color += ambient + diffustion + specular;
     }
 
     return result_color * 255.f;
 }
 
-Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
-{
+Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload &payload) {
     Eigen::Vector3f ka = Eigen::Vector3f(0.005, 0.005, 0.005); // Ambient coefficient
     Eigen::Vector3f kd = payload.color; // Diffustion coefficient
     Eigen::Vector3f ks = Eigen::Vector3f(0.7937, 0.7937, 0.7937); // Highlights coefficient
 
-    auto l1 = light{{20, 20, 20}, {500, 500, 500}};
-    auto l2 = light{{-20, 20, 0}, {500, 500, 500}};
+    auto l1 = light{{20,  20,  20},
+                    {500, 500, 500}};
+    auto l2 = light{{-20, 20,  0},
+                    {500, 500, 500}};
 
     std::vector<light> lights = {l1, l2};
     Eigen::Vector3f amb_light_intensity{10, 10, 10};
@@ -171,8 +186,7 @@ Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
     Eigen::Vector3f normal = payload.normal;
 
     Eigen::Vector3f result_color = {0, 0, 0};
-    for (auto& light : lights)
-    {
+    for (auto &light: lights) {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         //       components are. Then, accumulate that result on the *result_color* object.
         Vector3f light_vec = light.position - point;
@@ -185,8 +199,9 @@ Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
                               std::max(light_vec.normalized().dot(normal), 0.f);
         Vector3f specular = ks.array() *
                             light_intensity.array() *
-                            pow(std::max(-(view_vec.normalized() + light_vec.normalized()).normalized().dot(normal), 0.f), p);
-                            // FIXME:     -^- I do not know what's wrong, but if I add a negative signal in max(), It get right result.
+                            pow(std::max(-(view_vec.normalized() + light_vec.normalized()).normalized().dot(normal),
+                                         0.f), p);
+        // FIXME:     -^- I do not know what's wrong, but if I add a negative signal in max(), It get right result.
 
         // auto test = normal.normalized();
         // if (specular[0] > 0)
@@ -205,8 +220,10 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload &payl
     Eigen::Vector3f kd = payload.color;
     Eigen::Vector3f ks = Eigen::Vector3f(0.7937, 0.7937, 0.7937);
 
-    auto l1 = light{{20, 20, 20}, {500, 500, 500}};
-    auto l2 = light{{-20, 20, 0}, {500, 500, 500}};
+    auto l1 = light{{20,  20,  20},
+                    {500, 500, 500}};
+    auto l2 = light{{-20, 20,  0},
+                    {500, 500, 500}};
 
     std::vector<light> lights = {l1, l2};
     Eigen::Vector3f amb_light_intensity{10, 10, 10};
@@ -251,8 +268,10 @@ Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload &payload) {
     Eigen::Vector3f kd = payload.color;
     Eigen::Vector3f ks = Eigen::Vector3f(0.7937, 0.7937, 0.7937);
 
-    auto l1 = light{{20, 20, 20}, {500, 500, 500}};
-    auto l2 = light{{-20, 20, 0}, {500, 500, 500}};
+    auto l1 = light{{20,  20,  20},
+                    {500, 500, 500}};
+    auto l2 = light{{-20, 20,  0},
+                    {500, 500, 500}};
 
     std::vector<light> lights = {l1, l2};
     Eigen::Vector3f amb_light_intensity{10, 10, 10};
@@ -268,6 +287,29 @@ Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload &payload) {
     float kh = 0.2, kn = 0.1;
 
     // TODO: Implement bump mapping here
+    // See https://zhuanlan.zhihu.com/p/138566350
+    Vector3f n = normal;
+    Vector3f t = {n.x() * n.y() / sqrt(n.x() * n.x() + n.z() * n.z()),
+                  -sqrt(n.x() * n.x() + n.z() * n.z()),
+                  n.z() * n.y() / sqrt(n.x() * n.x() + n.z() * n.z())};
+    // FIXME: What is this? I add a negative symbol in `y` to make it correct
+    Vector3f b = n.cross(t);
+
+    Eigen::Matrix3f tex2globle; // The Trasformation from Texture Space to Clip Space
+    tex2globle << t.x(), b.x(), n.x(),
+            t.y(), b.y(), n.y(),
+            t.z(), b.z(), n.z();
+
+    float d = 0.1;
+    Vector3f dU = {d, 0, payload.texture->getColor(payload.tex_coords.x() + d, payload.tex_coords.y()).x() -
+                         payload.texture->getColor(payload.tex_coords.x(), payload.tex_coords.y()).x()};
+
+    Vector3f dV = {0, d, payload.texture->getColor(payload.tex_coords.x(), payload.tex_coords.y() + d).x() -
+                         payload.texture->getColor(payload.tex_coords.x(), payload.tex_coords.y()).x()};
+
+    Vector3f perturbed_normal = dU.cross(dV).normalized();
+    normal = tex2globle * perturbed_normal;
+
     // Let n = normal = (x, y, z)
     // Vector t = (x*y/sqrt(x*x+z*z),sqrt(x*x+z*z),z*y/sqrt(x*x+z*z))
     // Vector b = n cross product t
@@ -316,7 +358,7 @@ int main(int argc, const char **argv) {
     auto texture_path = "hmap.jpg";
     r.set_texture(Texture(obj_path + texture_path));
 
-    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = phong_fragment_shader;
+    std::function<Eigen::Vector3f(fragment_shader_payload)> active_shader = bump_fragment_shader;
 
     if (argc >= 2) {
         command_line = true;
@@ -383,11 +425,14 @@ int main(int argc, const char **argv) {
         cv::imwrite(filename, image);
         key = cv::waitKey(10);
 
-        if (key == 'a') {
-            angle -= 0.1;
-        } else if (key == 'd') {
-            angle += 0.1;
-        }
+        // if (key == 'a') {
+        //     angle -= 0.1;
+        // } else if (key == 'd') {
+        //     angle += 0.1;
+        // }
+
+        // angle += 10;
+        std::cout << "Frame" << std::endl;
 
     }
     return 0;
