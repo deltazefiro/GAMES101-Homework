@@ -7,11 +7,25 @@
 bool rayTriangleIntersect(const Vector3f& v0, const Vector3f& v1, const Vector3f& v2, const Vector3f& orig,
                           const Vector3f& dir, float& tnear, float& u, float& v)
 {
-    // TODO: Implement this function that tests whether the triangle
-    // that's specified bt v0, v1 and v2 intersects with the ray (whose
-    // origin is *orig* and direction is *dir*)
-    // Also don't forget to update tnear, u and v.
-    return false;
+    Vector3f e1 = v1 - v0;
+    Vector3f e2 = v2 - v0;
+    Vector3f s = orig - v0;
+    Vector3f s1 = crossProduct(dir, e2);
+    Vector3f s2 = crossProduct(s, e1);
+
+    float c = 1 / dotProduct(s1, e1);
+
+    tnear = c * dotProduct(s2, e2);
+    u = c * dotProduct(s1, s);
+    v = c * dotProduct(s2, dir);
+
+    // FIXME: Hey! The u, v is not the true uv! They are just the b1, b2 in barycentric coordinate!
+
+    //  Implement this function that tests whether the triangle
+    //  that's specified bt v0, v1 and v2 intersects with the ray (whose
+    //  origin is *orig* and direction is *dir*)
+    //  Also don't forget to update tnear, u and v.
+    return (u > 0) && (v > 0) && (u + v <= 1);
 }
 
 class MeshTriangle : public Object
@@ -65,6 +79,8 @@ public:
         Vector3f e0 = normalize(v1 - v0);
         Vector3f e1 = normalize(v2 - v1);
         N = normalize(crossProduct(e0, e1));
+
+        // FIXME: Hey! The u, v is not the true uv! They are just the b1, b2 in barycentric coordinate!
         const Vector2f& st0 = stCoordinates[vertexIndex[index * 3]];
         const Vector2f& st1 = stCoordinates[vertexIndex[index * 3 + 1]];
         const Vector2f& st2 = stCoordinates[vertexIndex[index * 3 + 2]];
