@@ -15,6 +15,7 @@ bool rayTriangleIntersect(const Vector3f& v0, const Vector3f& v1, const Vector3f
     v = dotProduct(s2, dir) / dotProduct(s1, e1);
 
     return (tnear > 0.0 && u > 0.0 && v > 0.0 && u + v <= 1.0);
+
     // FIXME:     ^ Here must have tnear > 0, or it will give a black scene
 
     // tnear = dotProduct(s2, e2) / dotProduct(s1, e1);

@@ -106,4 +106,13 @@ Intersection BVHAccel::getIntersection(BVHBuildNode* node, const Ray& ray) const
 {
     // TODO Traverse the BVH to find intersection
 
+    if (!node->bounds.IntersectP(ray, ray.direction_inv, std::array<int, 3>()))
+        return Intersection(); // No intersection with the node
+
+    if (node->left == nullptr) // The node only contain one object
+        return node->object->getIntersection(ray);
+
+    return std::min(getIntersection(node->left, ray), getIntersection(node->right, ray),
+                    [](Intersection a, Intersection b){return a.distance < b.distance;}); // Get the nearest intersect point
+                    // TODO: I think we can pruning here.
 }

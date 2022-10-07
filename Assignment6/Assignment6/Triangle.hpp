@@ -213,28 +213,40 @@ inline Intersection Triangle::getIntersection(Ray ray)
     Intersection inter;
 
     if (dotProduct(ray.direction, normal) > 0)
-        return inter;
+        return inter; // Go through the back of the plane, no intersection
     double u, v, t_tmp = 0;
-    Vector3f pvec = crossProduct(ray.direction, e2);
-    double det = dotProduct(e1, pvec);
+
+    Vector3f pvec = crossProduct(ray.direction, e2); // s1
+    double det = dotProduct(e1, pvec); // k (The denominator)
+
     if (fabs(det) < EPSILON)
         return inter;
 
     double det_inv = 1. / det;
-    Vector3f tvec = ray.origin - v0;
-    u = dotProduct(tvec, pvec) * det_inv;
+    Vector3f tvec = ray.origin - v0; // s
+    u = dotProduct(tvec, pvec) * det_inv; // p1
+
     if (u < 0 || u > 1)
         return inter;
-    Vector3f qvec = crossProduct(tvec, e1);
+
+    Vector3f qvec = crossProduct(tvec, e1); // s2
     v = dotProduct(ray.direction, qvec) * det_inv;
+
     if (v < 0 || u + v > 1)
         return inter;
-    t_tmp = dotProduct(e2, qvec) * det_inv;
 
-    // TODO find ray triangle intersection
+    t_tmp = dotProduct(e2, qvec) * det_inv; // tnear
 
+    //  find ray triangle intersection
+    if (t_tmp <= 0)
+        return inter;
 
-
+    inter.normal = normal;
+    inter.coords = ray.origin + ray.direction * t_tmp;
+    inter.distance = t_tmp;
+    inter.happened = true;
+    inter.m = m;
+    inter.obj = this;
 
     return inter;
 }
